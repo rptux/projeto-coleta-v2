@@ -1,0 +1,3217 @@
+from flask import Flask, render_template_string, request, jsonify, Response
+import sqlite3
+from pathlib import Path
+from datetime import datetime
+from io import BytesIO
+
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.enums import TA_CENTER
+from reportlab.lib.units import mm
+from reportlab.platypus import (
+    SimpleDocTemplate,
+    Table,
+    TableStyle,
+    Paragraph,
+    Spacer
+)
+
+
+# ============================================================
+# PROJETO COLETA - VERSÃO 1.3
+# SETOR D04
+# ============================================================
+
+app = Flask(__name__)
+
+BASE_DIR = Path(__file__).resolve().parent
+BANCO = BASE_DIR / "coleta.db"
+
+
+# ============================================================
+# BANCO DE DADOS
+# ============================================================
+
+def conectar_banco():
+
+    conexao = sqlite3.connect(BANCO)
+
+    conexao.row_factory = sqlite3.Row
+
+    conexao.execute(
+        "PRAGMA foreign_keys = ON"
+    )
+
+    return conexao
+
+
+# ============================================================
+# PÁGINA PRINCIPAL
+# ============================================================
+
+@app.route("/")
+def inicio():
+
+    conexao = conectar_banco()
+
+    locais = conexao.execute("""
+        SELECT
+            id,
+            ordem,
+            setor,
+            tipo,
+            nome
+        FROM locais
+        WHERE setor = 'D04'
+          AND ativo = 1
+        ORDER BY ordem
+    """).fetchall()
+
+
+    fiscais = conexao.execute("""
+        SELECT
+            id,
+            nome
+        FROM fiscais
+        WHERE ativo = 1
+        ORDER BY nome
+    """).fetchall()
+
+
+    conexao.close()
+
+
+    data_atual = datetime.now().strftime(
+        "%d/%m/%Y"
+    )
+
+
+    return render_template_string("""
+<!DOCTYPE html>
+
+<html lang="pt-BR">
+
+<head>
+
+<meta charset="UTF-8">
+
+<meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0"
+>
+
+<title>Projeto Coleta</title>
+
+
+<style>
+
+* {
+    box-sizing: border-box;
+}
+
+
+body {
+
+    margin: 0;
+    padding: 0;
+
+    font-family: Arial, sans-serif;
+
+    background: #eef1f4;
+
+    color: #1f2937;
+}
+
+
+/* ==========================================================
+   CABEÇALHO
+========================================================== */
+
+header {
+
+    background: #1f2937;
+
+    color: white;
+
+    padding: 20px 15px;
+}
+
+
+.topo {
+
+    width: 94%;
+
+    max-width: 850px;
+
+    margin: auto;
+}
+
+
+header h1 {
+
+    margin: 0;
+
+    font-size: 25px;
+}
+
+
+header p {
+
+    margin: 5px 0 0 0;
+
+    opacity: 0.85;
+}
+
+
+/* ==========================================================
+   CONTAINER
+========================================================== */
+
+.container {
+
+    width: 94%;
+
+    max-width: 850px;
+
+    margin: 18px auto 120px auto;
+}
+
+
+/* ==========================================================
+   CARDS
+========================================================== */
+
+.card {
+
+    background: white;
+
+    padding: 18px;
+
+    border-radius: 12px;
+
+    margin-bottom: 18px;
+
+    box-shadow:
+        0 2px 8px rgba(0,0,0,0.08);
+}
+
+
+/* ==========================================================
+   FISCAL / DATA
+========================================================== */
+
+.linha-info {
+
+    display: grid;
+
+    grid-template-columns:
+        1fr 1fr;
+
+    gap: 12px;
+}
+
+
+.campo label {
+
+    display: block;
+
+    margin-bottom: 6px;
+
+    font-size: 12px;
+
+    font-weight: bold;
+
+    color: #6b7280;
+}
+
+
+.campo select,
+.campo input {
+
+    width: 100%;
+
+    height: 46px;
+
+    border:
+        1px solid #d1d5db;
+
+    border-radius: 8px;
+
+    padding:
+        0 12px;
+
+    font-size: 16px;
+
+    background: white;
+}
+
+
+.campo input {
+
+    background: #f3f4f6;
+}
+
+
+/* ==========================================================
+   HISTÓRICO
+========================================================== */
+
+.btn-historico {
+
+    display: block;
+
+    width: 100%;
+
+    padding: 15px;
+
+    background: #374151;
+
+    color: white;
+
+    text-align: center;
+
+    text-decoration: none;
+
+    border-radius: 9px;
+
+    font-size: 16px;
+
+    font-weight: bold;
+}
+
+
+.btn-historico:hover {
+
+    background: #1f2937;
+}
+
+
+/* ==========================================================
+   PROGRESSO
+========================================================== */
+
+.progresso-topo {
+
+    display: flex;
+
+    justify-content:
+        space-between;
+
+    font-weight: bold;
+
+    margin-bottom: 9px;
+}
+
+
+.barra {
+
+    height: 12px;
+
+    background: #e5e7eb;
+
+    border-radius: 10px;
+
+    overflow: hidden;
+}
+
+
+.barra-preenchida {
+
+    height: 100%;
+
+    width: 0%;
+
+    background: #16a34a;
+
+    transition: 0.3s;
+}
+
+
+/* ==========================================================
+   LOCAL
+========================================================== */
+
+.local {
+
+    background: white;
+
+    border-radius: 12px;
+
+    padding: 17px;
+
+    margin-bottom: 12px;
+
+    box-shadow:
+        0 2px 7px rgba(0,0,0,0.07);
+}
+
+
+.local-topo {
+
+    display: flex;
+
+    align-items: center;
+
+    margin-bottom: 14px;
+}
+
+
+.numero {
+
+    min-width: 42px;
+
+    width: 42px;
+
+    height: 42px;
+
+    border-radius: 50%;
+
+    background: #e5e7eb;
+
+    display: flex;
+
+    align-items: center;
+
+    justify-content: center;
+
+    font-weight: bold;
+
+    margin-right: 13px;
+}
+
+
+.tipo {
+
+    font-size: 12px;
+
+    color: #6b7280;
+
+    font-weight: bold;
+}
+
+
+.nome {
+
+    font-size: 18px;
+
+    font-weight: bold;
+
+    margin-top: 2px;
+}
+
+
+.horario {
+
+    min-height: 16px;
+
+    margin-top: 5px;
+
+    font-size: 13px;
+
+    color: #2563eb;
+
+    font-weight: bold;
+}
+
+
+/* ==========================================================
+   BOTÕES SIM / NÃO
+========================================================== */
+
+.botoes {
+
+    display: grid;
+
+    grid-template-columns:
+        1fr 1fr;
+
+    gap: 10px;
+}
+
+
+.botao {
+
+    height: 52px;
+
+    border: none;
+
+    border-radius: 9px;
+
+    font-size: 17px;
+
+    font-weight: bold;
+
+    cursor: pointer;
+}
+
+
+.sim {
+
+    background: #dcfce7;
+
+    color: #166534;
+
+    border:
+        2px solid #86efac;
+}
+
+
+.nao {
+
+    background: #fee2e2;
+
+    color: #991b1b;
+
+    border:
+        2px solid #fca5a5;
+}
+
+
+.botao.selecionado.sim {
+
+    background: #16a34a;
+
+    color: white;
+}
+
+
+.botao.selecionado.nao {
+
+    background: #dc2626;
+
+    color: white;
+}
+
+
+.botao:disabled {
+
+    cursor: not-allowed;
+
+    opacity: 0.75;
+}
+
+
+/* ==========================================================
+   OBSERVAÇÃO
+========================================================== */
+
+.observacao {
+
+    display: none;
+
+    margin-top: 10px;
+}
+
+
+.observacao textarea {
+
+    width: 100%;
+
+    min-height: 80px;
+
+    resize: vertical;
+
+    border:
+        1px solid #d1d5db;
+
+    border-radius: 8px;
+
+    padding: 10px;
+
+    font-size: 15px;
+}
+
+
+/* ==========================================================
+   MENSAGENS
+========================================================== */
+
+.mensagem {
+
+    display: none;
+
+    padding: 16px;
+
+    border-radius: 10px;
+
+    margin-bottom: 18px;
+
+    font-weight: bold;
+}
+
+
+.mensagem.sucesso {
+
+    display: block;
+
+    background: #dcfce7;
+
+    color: #166534;
+
+    border:
+        1px solid #86efac;
+}
+
+
+.mensagem.erro {
+
+    display: block;
+
+    background: #fee2e2;
+
+    color: #991b1b;
+
+    border:
+        1px solid #fca5a5;
+}
+
+
+/* ==========================================================
+   RODAPÉ
+========================================================== */
+
+.rodape-salvar {
+
+    position: fixed;
+
+    bottom: 0;
+
+    left: 0;
+
+    right: 0;
+
+    background: white;
+
+    padding: 12px;
+
+    box-shadow:
+        0 -3px 12px rgba(0,0,0,0.12);
+}
+
+
+.salvar-container {
+
+    width: 94%;
+
+    max-width: 850px;
+
+    margin: auto;
+}
+
+
+.btn-salvar {
+
+    width: 100%;
+
+    height: 58px;
+
+    border: none;
+
+    border-radius: 10px;
+
+    background: #2563eb;
+
+    color: white;
+
+    font-size: 18px;
+
+    font-weight: bold;
+
+    cursor: pointer;
+}
+
+
+.btn-salvar:disabled {
+
+    background: #9ca3af;
+
+    cursor: not-allowed;
+}
+
+
+/* ==========================================================
+   CELULAR
+========================================================== */
+
+@media(max-width: 600px) {
+
+    .linha-info {
+
+        grid-template-columns:
+            1fr;
+    }
+
+
+    header h1 {
+
+        font-size: 22px;
+    }
+
+
+    .container {
+
+        width: 96%;
+    }
+}
+
+</style>
+
+</head>
+
+
+<body>
+
+
+<header>
+
+    <div class="topo">
+
+        <h1>
+            PROJETO COLETA
+        </h1>
+
+        <p>
+            Fiscalização de Coleta de Lixo • Setor D04
+        </p>
+
+    </div>
+
+</header>
+
+
+<div class="container">
+
+
+    <!-- ====================================================
+         MENSAGEM
+    ===================================================== -->
+
+    <div
+        id="mensagem"
+        class="mensagem"
+    ></div>
+
+
+    <!-- ====================================================
+         IDENTIFICAÇÃO
+    ===================================================== -->
+
+    <div class="card">
+
+        <div class="linha-info">
+
+
+            <div class="campo">
+
+                <label>
+                    FISCAL
+                </label>
+
+                <select id="fiscal">
+
+                    <option value="">
+                        Selecione o fiscal
+                    </option>
+
+
+                    {% for fiscal in fiscais %}
+
+                    <option
+                        value="{{ fiscal['id'] }}"
+                    >
+                        {{ fiscal["nome"] }}
+                    </option>
+
+                    {% endfor %}
+
+
+                </select>
+
+            </div>
+
+
+            <div class="campo">
+
+                <label>
+                    DATA
+                </label>
+
+                <input
+                    value="{{ data_atual }}"
+                    readonly
+                >
+
+            </div>
+
+
+        </div>
+
+    </div>
+
+
+    <!-- ====================================================
+         HISTÓRICO
+    ===================================================== -->
+
+    <div class="card">
+
+        <a
+            href="/historico"
+            class="btn-historico"
+        >
+            📋 HISTÓRICO DE FISCALIZAÇÕES
+        </a>
+
+    </div>
+
+
+    <!-- ====================================================
+         PROGRESSO
+    ===================================================== -->
+
+    <div class="card">
+
+        <div class="progresso-topo">
+
+            <span>
+                Progresso da fiscalização
+            </span>
+
+            <span id="contador">
+                0 / {{ locais|length }}
+            </span>
+
+        </div>
+
+
+        <div class="barra">
+
+            <div
+                class="barra-preenchida"
+                id="barra"
+            ></div>
+
+        </div>
+
+    </div>
+
+
+    <!-- ====================================================
+         LOCAIS
+    ===================================================== -->
+
+    {% for local in locais %}
+
+
+    <div
+        class="local"
+        data-local="{{ local['id'] }}"
+    >
+
+
+        <div class="local-topo">
+
+
+            <div class="numero">
+
+                {{ local["ordem"] }}
+
+            </div>
+
+
+            <div>
+
+
+                <div class="tipo">
+
+                    {{ local["tipo"] }}
+
+                </div>
+
+
+                <div class="nome">
+
+                    {{ local["nome"] }}
+
+                </div>
+
+
+                <div class="horario"></div>
+
+
+            </div>
+
+
+        </div>
+
+
+        <div class="botoes">
+
+
+            <button
+                type="button"
+                class="botao sim"
+                onclick="marcar(this, 'SIM')"
+            >
+                ✓ SIM
+            </button>
+
+
+            <button
+                type="button"
+                class="botao nao"
+                onclick="marcar(this, 'NÃO')"
+            >
+                ✕ NÃO
+            </button>
+
+
+        </div>
+
+
+        <div class="observacao">
+
+            <textarea
+                placeholder="Observação sobre este local..."
+            ></textarea>
+
+        </div>
+
+
+    </div>
+
+
+    {% endfor %}
+
+
+</div>
+
+
+<!-- ========================================================
+     SALVAR
+========================================================= -->
+
+<div class="rodape-salvar">
+
+    <div class="salvar-container">
+
+        <button
+            id="btnSalvar"
+            class="btn-salvar"
+            type="button"
+            onclick="salvarFiscalizacao()"
+        >
+            SALVAR FISCALIZAÇÃO
+        </button>
+
+    </div>
+
+</div>
+
+
+<script>
+
+
+// ==========================================================
+// HORÁRIO ATUAL
+// ==========================================================
+
+function horarioAtual() {
+
+    const agora =
+        new Date();
+
+
+    const horas =
+        String(
+            agora.getHours()
+        ).padStart(
+            2,
+            "0"
+        );
+
+
+    const minutos =
+        String(
+            agora.getMinutes()
+        ).padStart(
+            2,
+            "0"
+        );
+
+
+    const segundos =
+        String(
+            agora.getSeconds()
+        ).padStart(
+            2,
+            "0"
+        );
+
+
+    return (
+        horas +
+        ":" +
+        minutos +
+        ":" +
+        segundos
+    );
+}
+
+
+// ==========================================================
+// MARCAR
+// ==========================================================
+
+function marcar(botao, resposta) {
+
+    const local =
+        botao.closest(
+            ".local"
+        );
+
+
+    const botoes =
+        local.querySelectorAll(
+            ".botao"
+        );
+
+
+    botoes.forEach(
+        function(b) {
+
+            b.classList.remove(
+                "selecionado"
+            );
+
+        }
+    );
+
+
+    botao.classList.add(
+        "selecionado"
+    );
+
+
+    // Horário da primeira marcação.
+    // Se mudar SIM/NÃO depois,
+    // o horário original permanece.
+
+    if (!local.dataset.horario) {
+
+        local.dataset.horario =
+            horarioAtual();
+
+    }
+
+
+    local.dataset.resposta =
+        resposta;
+
+
+    const horario =
+        local.querySelector(
+            ".horario"
+        );
+
+
+    horario.textContent =
+        "Vistoria: " +
+        local.dataset.horario;
+
+
+    const observacao =
+        local.querySelector(
+            ".observacao"
+        );
+
+
+    if (resposta === "NÃO") {
+
+        observacao.style.display =
+            "block";
+
+    } else {
+
+        observacao.style.display =
+            "none";
+
+    }
+
+
+    atualizarProgresso();
+}
+
+
+// ==========================================================
+// PROGRESSO
+// ==========================================================
+
+function atualizarProgresso() {
+
+    const total =
+        document.querySelectorAll(
+            ".local"
+        ).length;
+
+
+    const respondidos =
+        document.querySelectorAll(
+            ".local[data-resposta]"
+        ).length;
+
+
+    document.getElementById(
+        "contador"
+    ).textContent =
+        respondidos +
+        " / " +
+        total;
+
+
+    let porcentagem = 0;
+
+
+    if (total > 0) {
+
+        porcentagem =
+            (
+                respondidos /
+                total
+            ) * 100;
+
+    }
+
+
+    document.getElementById(
+        "barra"
+    ).style.width =
+        porcentagem +
+        "%";
+}
+
+
+// ==========================================================
+// MENSAGEM
+// ==========================================================
+
+function mostrarMensagem(
+    texto,
+    tipo
+) {
+
+    const elemento =
+        document.getElementById(
+            "mensagem"
+        );
+
+
+    elemento.textContent =
+        texto;
+
+
+    elemento.className =
+        "mensagem " +
+        tipo;
+}
+
+
+// ==========================================================
+// SALVAR FISCALIZAÇÃO
+// ==========================================================
+
+async function salvarFiscalizacao() {
+
+
+    const fiscal =
+        document.getElementById(
+            "fiscal"
+        ).value;
+
+
+    // ------------------------------------------------------
+    // FISCAL
+    // ------------------------------------------------------
+
+    if (!fiscal) {
+
+        mostrarMensagem(
+            "Selecione o fiscal antes de salvar.",
+            "erro"
+        );
+
+
+        window.scrollTo({
+
+            top: 0,
+
+            behavior:
+                "smooth"
+
+        });
+
+
+        return;
+    }
+
+
+    // ------------------------------------------------------
+    // LOCAIS RESPONDIDOS
+    // ------------------------------------------------------
+
+    const elementos =
+        document.querySelectorAll(
+            ".local[data-resposta]"
+        );
+
+
+    if (elementos.length === 0) {
+
+        mostrarMensagem(
+            "Nenhum local foi vistoriado.",
+            "erro"
+        );
+
+
+        window.scrollTo({
+
+            top: 0,
+
+            behavior:
+                "smooth"
+
+        });
+
+
+        return;
+    }
+
+
+    // ------------------------------------------------------
+    // MONTA VISTORIAS
+    // ------------------------------------------------------
+
+    const vistorias = [];
+
+
+    elementos.forEach(
+        function(local) {
+
+
+            const textarea =
+                local.querySelector(
+                    "textarea"
+                );
+
+
+            vistorias.push({
+
+                local_id:
+                    Number(
+                        local.dataset.local
+                    ),
+
+                satisfatoria:
+                    local.dataset.resposta,
+
+                horario:
+                    local.dataset.horario,
+
+                observacao:
+                    textarea.value.trim()
+
+            });
+
+        }
+    );
+
+
+    // ------------------------------------------------------
+    // BOTÃO
+    // ------------------------------------------------------
+
+    const botao =
+        document.getElementById(
+            "btnSalvar"
+        );
+
+
+    botao.disabled = true;
+
+
+    botao.textContent =
+        "SALVANDO...";
+
+
+    // ------------------------------------------------------
+    // ENVIA
+    // ------------------------------------------------------
+
+    try {
+
+
+        const resposta =
+            await fetch(
+                "/salvar",
+                {
+
+                    method:
+                        "POST",
+
+                    headers: {
+
+                        "Content-Type":
+                            "application/json"
+
+                    },
+
+                    body:
+                        JSON.stringify({
+
+                            fiscal_id:
+                                Number(
+                                    fiscal
+                                ),
+
+                            vistorias:
+                                vistorias
+
+                        })
+
+                }
+            );
+
+
+        const dados =
+            await resposta.json();
+
+
+        if (!resposta.ok) {
+
+            throw new Error(
+                dados.erro ||
+                "Erro ao salvar fiscalização."
+            );
+
+        }
+
+
+        // --------------------------------------------------
+        // SUCESSO
+        // --------------------------------------------------
+
+        mostrarMensagem(
+            dados.mensagem,
+            "sucesso"
+        );
+
+
+        document.querySelectorAll(
+            ".botao"
+        ).forEach(
+            function(b) {
+
+                b.disabled = true;
+
+            }
+        );
+
+
+        document.querySelectorAll(
+            "textarea"
+        ).forEach(
+            function(t) {
+
+                t.disabled = true;
+
+            }
+        );
+
+
+        document.getElementById(
+            "fiscal"
+        ).disabled = true;
+
+
+        botao.textContent =
+            "FISCALIZAÇÃO #" +
+            dados.fiscalizacao_id +
+            " SALVA";
+
+
+        window.scrollTo({
+
+            top: 0,
+
+            behavior:
+                "smooth"
+
+        });
+
+
+    } catch (erro) {
+
+
+        mostrarMensagem(
+            erro.message,
+            "erro"
+        );
+
+
+        botao.disabled =
+            false;
+
+
+        botao.textContent =
+            "SALVAR FISCALIZAÇÃO";
+
+
+        window.scrollTo({
+
+            top: 0,
+
+            behavior:
+                "smooth"
+
+        });
+
+    }
+
+}
+
+
+</script>
+
+
+</body>
+
+</html>
+    """,
+        locais=locais,
+        fiscais=fiscais,
+        data_atual=data_atual
+    )
+
+
+# ============================================================
+# SALVAR FISCALIZAÇÃO
+# ============================================================
+
+@app.route(
+    "/salvar",
+    methods=["POST"]
+)
+def salvar():
+
+
+    dados = request.get_json(
+            silent=True
+        )
+
+
+    # ========================================================
+    # VALIDAÇÃO INICIAL
+    # ========================================================
+
+    if not dados:
+
+        return jsonify({
+
+            "erro":
+                "Dados não recebidos."
+
+        }), 400
+
+
+    fiscal_id = dados.get(
+            "fiscal_id"
+        )
+
+
+    vistorias = dados.get(
+            "vistorias",
+            []
+        )
+
+
+    if not fiscal_id:
+
+        return jsonify({
+
+            "erro":
+                "Fiscal não informado."
+
+        }), 400
+
+
+    if not vistorias:
+
+        return jsonify({
+
+            "erro":
+                "Nenhuma vistoria recebida."
+
+        }), 400
+
+
+    conexao = conectar_banco()
+
+
+    try:
+
+
+        # ====================================================
+        # CONFERE FISCAL
+        # ====================================================
+
+        fiscal = conexao.execute("""
+                SELECT
+                    id,
+                    nome
+                FROM fiscais
+                WHERE id = ?
+                  AND ativo = 1
+            """,
+            (
+                fiscal_id,
+            )
+        ).fetchone()
+
+
+        if fiscal is None:
+
+            raise ValueError(
+                "Fiscal inválido."
+            )
+
+
+        # ====================================================
+        # DATA DO SERVIDOR
+        # ====================================================
+
+        agora_servidor = datetime.now()
+
+
+        data_banco = agora_servidor.strftime(
+                "%Y-%m-%d"
+            )
+
+
+        criado_em = agora_servidor.strftime(
+                "%Y-%m-%d %H:%M:%S"
+            )
+
+
+        # ====================================================
+        # CRIA UMA NOVA FISCALIZAÇÃO
+        # ====================================================
+
+        cursor = conexao.execute("""
+                INSERT INTO fiscalizacoes (
+                    data,
+                    fiscal_id,
+                    setor,
+                    criado_em
+                )
+                VALUES (
+                    ?,
+                    ?,
+                    'D04',
+                    ?
+                )
+            """,
+            (
+                data_banco,
+                fiscal_id,
+                criado_em
+            )
+        )
+
+
+        fiscalizacao_id = cursor.lastrowid
+
+
+        quantidade = 0
+
+
+        # ====================================================
+        # PROCESSA OS LOCAIS
+        # ====================================================
+
+        for vistoria in vistorias:
+
+
+            local_id = vistoria.get(
+                    "local_id"
+                )
+
+
+            satisfatoria = vistoria.get(
+                    "satisfatoria"
+                )
+
+
+            horario = vistoria.get(
+                    "horario"
+                )
+
+
+            observacao = vistoria.get(
+                    "observacao",
+                    ""
+                )
+
+
+            # ------------------------------------------------
+            # SIM / NÃO
+            # ------------------------------------------------
+
+            if satisfatoria not in (
+                "SIM",
+                "NÃO"
+            ):
+
+                raise ValueError(
+                    "Resposta de vistoria inválida."
+                )
+
+
+            # ------------------------------------------------
+            # HORÁRIO
+            # ------------------------------------------------
+
+            if not horario:
+
+                raise ValueError(
+                    "Horário da vistoria não informado."
+                )
+
+
+            # ------------------------------------------------
+            # LOCAL
+            # ------------------------------------------------
+
+            local = conexao.execute("""
+                    SELECT
+                        id,
+                        setor
+                    FROM locais
+                    WHERE id = ?
+                      AND setor = 'D04'
+                      AND ativo = 1
+                """,
+                (
+                    local_id,
+                )
+            ).fetchone()
+
+
+            if local is None:
+
+                raise ValueError(
+                    "Local de vistoria inválido."
+                )
+
+
+            # ------------------------------------------------
+            # GRAVA VISTORIA
+            # ------------------------------------------------
+
+            conexao.execute("""
+                INSERT INTO vistorias (
+                    data,
+                    horario,
+                    fiscal_id,
+                    local_id,
+                    setor,
+                    satisfatoria,
+                    observacao,
+                    criado_em,
+                    fiscalizacao_id
+                )
+                VALUES (
+                    ?,
+                    ?,
+                    ?,
+                    ?,
+                    'D04',
+                    ?,
+                    ?,
+                    ?,
+                    ?
+                )
+            """,
+            (
+                data_banco,
+                horario,
+                fiscal_id,
+                local_id,
+                satisfatoria,
+                observacao,
+                criado_em,
+                fiscalizacao_id
+            ))
+
+
+            quantidade += 1
+
+
+        # ====================================================
+        # CONFIRMA TUDO
+        # ====================================================
+
+        conexao.commit()
+
+
+        return jsonify({
+
+            "sucesso":
+                True,
+
+            "fiscalizacao_id":
+                fiscalizacao_id,
+
+            "quantidade":
+                quantidade,
+
+            "mensagem":
+                (
+                    f"Fiscalização #{fiscalizacao_id} "
+                    f"salva com sucesso! "
+                    f"{quantidade} local(is) registrado(s)."
+                )
+
+        })
+
+
+    except Exception as erro:
+
+
+        conexao.rollback()
+
+
+        return jsonify({
+
+            "erro":
+                str(erro)
+
+        }), 400
+
+
+    finally:
+
+        conexao.close()
+
+
+# ============================================================
+# HISTÓRICO DE FISCALIZAÇÕES
+# ============================================================
+
+@app.route("/historico")
+def historico():
+
+
+    conexao = conectar_banco()
+
+
+    # ========================================================
+    # FISCALIZAÇÕES NOVAS
+    # ========================================================
+
+    fiscalizacoes = conexao.execute("""
+            SELECT
+                fi.id,
+                fi.data,
+                fi.setor,
+                fi.criado_em,
+                f.nome AS fiscal,
+                COUNT(v.id) AS quantidade,
+                SUM(
+                    CASE
+                        WHEN v.satisfatoria = 'SIM'
+                        THEN 1
+                        ELSE 0
+                    END
+                ) AS total_sim,
+                SUM(
+                    CASE
+                        WHEN v.satisfatoria = 'NÃO'
+                        THEN 1
+                        ELSE 0
+                    END
+                ) AS total_nao
+            FROM fiscalizacoes fi
+
+            INNER JOIN fiscais f
+                ON f.id = fi.fiscal_id
+
+            LEFT JOIN vistorias v
+                ON v.fiscalizacao_id = fi.id
+
+            GROUP BY
+                fi.id,
+                fi.data,
+                fi.setor,
+                fi.criado_em,
+                f.nome
+
+            ORDER BY
+                fi.id DESC
+        """).fetchall()
+
+
+    # ========================================================
+    # REGISTROS ANTIGOS SEM FISCALIZACAO_ID
+    # ========================================================
+
+    antigos = conexao.execute("""
+            SELECT
+                v.id,
+                v.data,
+                v.horario,
+                f.nome AS fiscal,
+                l.ordem,
+                l.tipo,
+                l.nome AS local,
+                v.satisfatoria,
+                v.observacao
+            FROM vistorias v
+
+            INNER JOIN fiscais f
+                ON f.id = v.fiscal_id
+
+            INNER JOIN locais l
+                ON l.id = v.local_id
+
+            WHERE v.fiscalizacao_id IS NULL
+
+            ORDER BY
+                v.id DESC
+        """).fetchall()
+
+
+    conexao.close()
+
+
+    return render_template_string("""
+<!DOCTYPE html>
+
+<html lang="pt-BR">
+
+<head>
+
+<meta charset="UTF-8">
+
+<meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0"
+>
+
+<title>Histórico - Projeto Coleta</title>
+
+
+<style>
+
+* {
+    box-sizing: border-box;
+}
+
+
+body {
+
+    margin: 0;
+
+    font-family:
+        Arial,
+        sans-serif;
+
+    background:
+        #eef1f4;
+
+    color:
+        #1f2937;
+}
+
+
+header {
+
+    background:
+        #1f2937;
+
+    color:
+        white;
+
+    padding:
+        20px 15px;
+}
+
+
+.topo {
+
+    width:
+        94%;
+
+    max-width:
+        1000px;
+
+    margin:
+        auto;
+}
+
+
+header h1 {
+
+    margin:
+        0;
+
+    font-size:
+        25px;
+}
+
+
+header p {
+
+    margin:
+        5px 0 0 0;
+
+    opacity:
+        0.85;
+}
+
+
+.container {
+
+    width:
+        94%;
+
+    max-width:
+        1000px;
+
+    margin:
+        20px auto 50px auto;
+}
+
+
+.acoes {
+
+    margin-bottom:
+        18px;
+}
+
+
+.voltar {
+
+    display:
+        inline-block;
+
+    padding:
+        12px 18px;
+
+    background:
+        #2563eb;
+
+    color:
+        white;
+
+    text-decoration:
+        none;
+
+    border-radius:
+        8px;
+
+    font-weight:
+        bold;
+}
+
+
+.titulo-secao {
+
+    margin:
+        28px 0 12px 0;
+
+    font-size:
+        19px;
+}
+
+
+.btn-detalhes {
+    display: inline-block;
+    margin-top: 14px;
+    padding: 11px 16px;
+    background: #2563eb;
+    color: white;
+    text-decoration: none;
+    border-radius: 8px;
+    font-weight: bold;
+}
+
+.btn-detalhes:hover {
+    background: #1d4ed8;
+}
+
+
+.fiscalizacao {
+
+    background:
+        white;
+
+    border-radius:
+        12px;
+
+    padding:
+        18px;
+
+    margin-bottom:
+        14px;
+
+    box-shadow:
+        0 2px 8px rgba(0,0,0,0.08);
+}
+
+
+.fiscalizacao-topo {
+
+    display:
+        flex;
+
+    justify-content:
+        space-between;
+
+    gap:
+        15px;
+
+    align-items:
+        center;
+}
+
+
+.numero-fiscalizacao {
+
+    font-size:
+        21px;
+
+    font-weight:
+        bold;
+
+    color:
+        #1f2937;
+}
+
+
+.dados {
+
+    margin-top:
+        9px;
+
+    line-height:
+        1.7;
+
+    color:
+        #4b5563;
+}
+
+
+.contadores {
+
+    margin-top:
+        12px;
+
+    display:
+        flex;
+
+    flex-wrap:
+        wrap;
+
+    gap:
+        8px;
+}
+
+
+.tag {
+
+    display:
+        inline-block;
+
+    padding:
+        7px 10px;
+
+    border-radius:
+        7px;
+
+    font-size:
+        13px;
+
+    font-weight:
+        bold;
+}
+
+
+.tag-total {
+
+    background:
+        #e5e7eb;
+
+    color:
+        #374151;
+}
+
+
+.tag-sim {
+
+    background:
+        #dcfce7;
+
+    color:
+        #166534;
+}
+
+
+.tag-nao {
+
+    background:
+        #fee2e2;
+
+    color:
+        #991b1b;
+}
+
+
+.aviso {
+
+    background:
+        #fff7ed;
+
+    border:
+        1px solid #fed7aa;
+
+    color:
+        #9a3412;
+
+    border-radius:
+        10px;
+
+    padding:
+        15px;
+
+    margin-bottom:
+        15px;
+}
+
+
+.tabela-container {
+
+    background:
+        white;
+
+    border-radius:
+        12px;
+
+    overflow-x:
+        auto;
+
+    box-shadow:
+        0 2px 8px rgba(0,0,0,0.08);
+}
+
+
+table {
+
+    width:
+        100%;
+
+    border-collapse:
+        collapse;
+
+    min-width:
+        800px;
+}
+
+
+th {
+
+    background:
+        #374151;
+
+    color:
+        white;
+
+    text-align:
+        left;
+
+    padding:
+        12px 10px;
+
+    font-size:
+        13px;
+}
+
+
+td {
+
+    padding:
+        11px 10px;
+
+    border-bottom:
+        1px solid #e5e7eb;
+
+    font-size:
+        14px;
+}
+
+
+.resultado-sim {
+
+    color:
+        #15803d;
+
+    font-weight:
+        bold;
+}
+
+
+.resultado-nao {
+
+    color:
+        #dc2626;
+
+    font-weight:
+        bold;
+}
+
+
+.vazio {
+
+    background:
+        white;
+
+    padding:
+        25px;
+
+    border-radius:
+        12px;
+
+    text-align:
+        center;
+
+    color:
+        #6b7280;
+}
+
+
+@media(max-width: 600px) {
+
+    header h1 {
+
+        font-size:
+            21px;
+    }
+
+
+    .container {
+
+        width:
+            96%;
+    }
+
+
+    .fiscalizacao-topo {
+
+        display:
+            block;
+    }
+
+}
+
+</style>
+
+</head>
+
+
+<body>
+
+
+<header>
+
+    <div class="topo">
+
+        <h1>
+            HISTÓRICO DE FISCALIZAÇÕES
+        </h1>
+
+        <p>
+            Fiscalização de Coleta de Lixo • Setor D04
+        </p>
+
+    </div>
+
+</header>
+
+
+<div class="container">
+
+
+    <div class="acoes">
+
+        <a
+            href="/"
+            class="voltar"
+        >
+            ← NOVA FISCALIZAÇÃO
+        </a>
+
+    </div>
+
+
+    <!-- ====================================================
+         FISCALIZAÇÕES NOVAS
+    ===================================================== -->
+
+    <h2 class="titulo-secao">
+        Fiscalizações
+    </h2>
+
+
+    {% if fiscalizacoes %}
+
+
+        {% for fiscalizacao in fiscalizacoes %}
+
+
+        <div class="fiscalizacao">
+
+
+            <div class="fiscalizacao-topo">
+
+
+                <div class="numero-fiscalizacao">
+
+                    FISCALIZAÇÃO
+                    #{{ fiscalizacao["id"] }}
+
+                </div>
+
+
+                <div>
+
+                    {{ fiscalizacao["data"][8:10] }}/{{ fiscalizacao["data"][5:7] }}/{{ fiscalizacao["data"][0:4] }}
+
+                </div>
+
+
+            </div>
+
+
+            <div class="dados">
+
+                <strong>Fiscal:</strong>
+
+                {{ fiscalizacao["fiscal"] }}
+
+                <br>
+
+
+                <strong>Setor:</strong>
+
+                {{ fiscalizacao["setor"] }}
+
+                <br>
+
+
+                <strong>Salva em:</strong>
+
+                {{ fiscalizacao["criado_em"] }}
+
+            </div>
+
+
+            <div class="contadores">
+
+
+                <span class="tag tag-total">
+
+                    LOCAIS:
+                    {{ fiscalizacao["quantidade"] }}
+
+                </span>
+
+
+                <span class="tag tag-sim">
+
+                    ✓ SIM:
+                    {{ fiscalizacao["total_sim"] or 0 }}
+
+                </span>
+
+
+                <span class="tag tag-nao">
+
+                    ✕ NÃO:
+                    {{ fiscalizacao["total_nao"] or 0 }}
+
+                </span>
+
+
+            </div>
+
+
+            <a
+                href="/fiscalizacao/{{ fiscalizacao['id'] }}"
+                class="btn-detalhes"
+            >
+                👁 VER DETALHES
+            </a>
+
+
+        </div>
+
+
+        {% endfor %}
+
+
+    {% else %}
+
+
+        <div class="vazio">
+
+            Nenhuma fiscalização da nova estrutura
+            foi registrada ainda.
+
+        </div>
+
+
+    {% endif %}
+
+
+    <!-- ====================================================
+         REGISTROS ANTIGOS
+    ===================================================== -->
+
+    {% if antigos %}
+
+
+        <h2 class="titulo-secao">
+
+            Registros anteriores à nova estrutura
+
+        </h2>
+
+
+        <div class="aviso">
+
+            Estes registros foram preservados.
+
+            Eles foram gravados antes da criação
+            do número único de fiscalização.
+
+        </div>
+
+
+        <div class="tabela-container">
+
+
+            <table>
+
+
+                <thead>
+
+                    <tr>
+
+                        <th>ID</th>
+
+                        <th>DATA</th>
+
+                        <th>HORÁRIO</th>
+
+                        <th>FISCAL</th>
+
+                        <th>LOCAL</th>
+
+                        <th>RESULTADO</th>
+
+                        <th>OBSERVAÇÃO</th>
+
+                    </tr>
+
+                </thead>
+
+
+                <tbody>
+
+
+                    {% for registro in antigos %}
+
+
+                    <tr>
+
+
+                        <td>
+
+                            {{ registro["id"] }}
+
+                        </td>
+
+
+                        <td>
+
+                            {{ registro["data"][8:10] }}/{{ registro["data"][5:7] }}/{{ registro["data"][0:4] }}
+
+                        </td>
+
+
+                        <td>
+
+                            {{ registro["horario"] }}
+
+                        </td>
+
+
+                        <td>
+
+                            {{ registro["fiscal"] }}
+
+                        </td>
+
+
+                        <td>
+
+                            {{ registro["ordem"] }}.
+
+                            {{ registro["tipo"] }}
+
+                            {{ registro["local"] }}
+
+                        </td>
+
+
+                        <td>
+
+
+                            {% if registro["satisfatoria"] == "SIM" %}
+
+
+                            <span class="resultado-sim">
+
+                                ✓ SIM
+
+                            </span>
+
+
+                            {% else %}
+
+
+                            <span class="resultado-nao">
+
+                                ✕ NÃO
+
+                            </span>
+
+
+                            {% endif %}
+
+
+                        </td>
+
+
+                        <td>
+
+
+                            {% if registro["observacao"] %}
+
+                                {{ registro["observacao"] }}
+
+                            {% else %}
+
+                                —
+
+                            {% endif %}
+
+
+                        </td>
+
+
+                    </tr>
+
+
+                    {% endfor %}
+
+
+                </tbody>
+
+
+            </table>
+
+
+        </div>
+
+
+    {% endif %}
+
+
+</div>
+
+
+</body>
+
+</html>
+    """,
+        fiscalizacoes=fiscalizacoes,
+        antigos=antigos
+    )
+
+
+
+# ============================================================
+# DETALHES DA FISCALIZAÇÃO
+# ============================================================
+
+@app.route("/fiscalizacao/<int:fiscalizacao_id>")
+def detalhes_fiscalizacao(fiscalizacao_id):
+
+    conexao = conectar_banco()
+
+    fiscalizacao = conexao.execute("""
+        SELECT
+            fi.id,
+            fi.data,
+            fi.setor,
+            fi.criado_em,
+            f.nome AS fiscal
+        FROM fiscalizacoes fi
+        INNER JOIN fiscais f
+            ON f.id = fi.fiscal_id
+        WHERE fi.id = ?
+    """, (fiscalizacao_id,)).fetchone()
+
+    if fiscalizacao is None:
+        conexao.close()
+        return "Fiscalização não encontrada.", 404
+
+    vistorias = conexao.execute("""
+        SELECT
+            v.id,
+            v.horario,
+            v.satisfatoria,
+            v.observacao,
+            l.ordem,
+            l.tipo,
+            l.nome AS local
+        FROM vistorias v
+        INNER JOIN locais l
+            ON l.id = v.local_id
+        WHERE v.fiscalizacao_id = ?
+        ORDER BY l.ordem
+    """, (fiscalizacao_id,)).fetchall()
+
+    conexao.close()
+
+    return render_template_string("""
+<!DOCTYPE html>
+
+<html lang="pt-BR">
+
+<head>
+
+<meta charset="UTF-8">
+
+<meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0"
+>
+
+<title>Fiscalização #{{ fiscalizacao["id"] }}</title>
+
+<style>
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    background: #eef1f4;
+    color: #1f2937;
+}
+
+header {
+    background: #1f2937;
+    color: white;
+    padding: 20px 15px;
+}
+
+.topo,
+.container {
+    width: 94%;
+    max-width: 1000px;
+    margin: auto;
+}
+
+header h1 {
+    margin: 0;
+    font-size: 25px;
+}
+
+header p {
+    margin: 5px 0 0 0;
+    opacity: 0.85;
+}
+
+.container {
+    margin-top: 20px;
+    margin-bottom: 50px;
+}
+
+.voltar {
+    display: inline-block;
+    padding: 12px 18px;
+    background: #2563eb;
+    color: white;
+    text-decoration: none;
+    border-radius: 8px;
+    font-weight: bold;
+    margin-bottom: 18px;
+}
+
+
+.pdf {
+    display: inline-block;
+    padding: 12px 18px;
+    background: #dc2626;
+    color: white;
+    text-decoration: none;
+    border-radius: 8px;
+    font-weight: bold;
+    margin: 0 0 18px 8px;
+}
+
+.pdf:hover {
+    background: #b91c1c;
+}
+
+.resumo {
+    background: white;
+    padding: 18px;
+    border-radius: 12px;
+    margin-bottom: 18px;
+    line-height: 1.8;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}
+
+.tabela-container {
+    background: white;
+    border-radius: 12px;
+    overflow-x: auto;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 720px;
+}
+
+th {
+    background: #374151;
+    color: white;
+    text-align: left;
+    padding: 12px 10px;
+    font-size: 13px;
+}
+
+td {
+    padding: 11px 10px;
+    border-bottom: 1px solid #e5e7eb;
+    font-size: 14px;
+}
+
+.resultado-sim {
+    color: #15803d;
+    font-weight: bold;
+}
+
+.resultado-nao {
+    color: #dc2626;
+    font-weight: bold;
+}
+
+@media(max-width: 600px) {
+
+    header h1 {
+        font-size: 21px;
+    }
+
+    .container {
+        width: 96%;
+    }
+}
+
+</style>
+
+</head>
+
+<body>
+
+<header>
+
+    <div class="topo">
+
+        <h1>
+            FISCALIZAÇÃO #{{ fiscalizacao["id"] }}
+        </h1>
+
+        <p>
+            Detalhes da Fiscalização • Setor {{ fiscalizacao["setor"] }}
+        </p>
+
+    </div>
+
+</header>
+
+<div class="container">
+
+    <a
+        href="/historico"
+        class="voltar"
+    >
+        ← VOLTAR AO HISTÓRICO
+    </a>
+
+    <a
+        href="/fiscalizacao/{{ fiscalizacao['id'] }}/pdf"
+        class="pdf"
+        target="_blank"
+    >
+        📄 GERAR PDF
+    </a>
+
+    <div class="resumo">
+
+        <strong>Data:</strong>
+        {{ fiscalizacao["data"][8:10] }}/{{ fiscalizacao["data"][5:7] }}/{{ fiscalizacao["data"][0:4] }}
+
+        <br>
+
+        <strong>Fiscal:</strong>
+        {{ fiscalizacao["fiscal"] }}
+
+        <br>
+
+        <strong>Setor:</strong>
+        {{ fiscalizacao["setor"] }}
+
+        <br>
+
+        <strong>Salva em:</strong>
+        {{ fiscalizacao["criado_em"] }}
+
+        <br>
+
+        <strong>Total de locais:</strong>
+        {{ vistorias|length }}
+
+    </div>
+
+    <div class="tabela-container">
+
+        <table>
+
+            <thead>
+
+                <tr>
+                    <th>LOCAL</th>
+                    <th>HORÁRIO</th>
+                    <th>RESULTADO</th>
+                    <th>OBSERVAÇÃO</th>
+                </tr>
+
+            </thead>
+
+            <tbody>
+
+                {% for vistoria in vistorias %}
+
+                <tr>
+
+                    <td>
+                        {{ vistoria["ordem"] }}.
+                        {{ vistoria["tipo"] }}
+                        {{ vistoria["local"] }}
+                    </td>
+
+                    <td>
+                        {{ vistoria["horario"] }}
+                    </td>
+
+                    <td>
+
+                        {% if vistoria["satisfatoria"] == "SIM" %}
+
+                        <span class="resultado-sim">
+                            ✓ SIM
+                        </span>
+
+                        {% else %}
+
+                        <span class="resultado-nao">
+                            ✕ NÃO
+                        </span>
+
+                        {% endif %}
+
+                    </td>
+
+                    <td>
+
+                        {% if vistoria["observacao"] %}
+
+                            {{ vistoria["observacao"] }}
+
+                        {% else %}
+
+                            —
+
+                        {% endif %}
+
+                    </td>
+
+                </tr>
+
+                {% endfor %}
+
+            </tbody>
+
+        </table>
+
+    </div>
+
+</div>
+
+</body>
+
+</html>
+    """,
+        fiscalizacao=fiscalizacao,
+        vistorias=vistorias
+    )
+
+
+
+# ============================================================
+# PDF DA FISCALIZAÇÃO - D04
+# ============================================================
+
+@app.route("/fiscalizacao/<int:fiscalizacao_id>/pdf")
+def pdf_fiscalizacao(fiscalizacao_id):
+
+    conexao = conectar_banco()
+
+    fiscalizacao = conexao.execute("""
+        SELECT
+            fi.id,
+            fi.data,
+            fi.setor,
+            fi.criado_em,
+            f.nome AS fiscal
+        FROM fiscalizacoes fi
+        INNER JOIN fiscais f
+            ON f.id = fi.fiscal_id
+        WHERE fi.id = ?
+    """, (fiscalizacao_id,)).fetchone()
+
+    if fiscalizacao is None:
+        conexao.close()
+        return "Fiscalização não encontrada.", 404
+
+    # O relatório oficial lista os 35 locais do D04.
+    # Locais não vistoriados nesta fiscalização ficam em branco.
+    linhas = conexao.execute("""
+        SELECT
+            l.ordem,
+            l.tipo,
+            l.nome AS local,
+            v.horario,
+            v.satisfatoria,
+            v.observacao
+        FROM locais l
+        LEFT JOIN vistorias v
+            ON v.local_id = l.id
+           AND v.fiscalizacao_id = ?
+        WHERE l.setor = 'D04'
+          AND l.ativo = 1
+        ORDER BY l.ordem
+    """, (fiscalizacao_id,)).fetchall()
+
+    conexao.close()
+
+    buffer = BytesIO()
+
+    documento = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        rightMargin=10 * mm,
+        leftMargin=10 * mm,
+        topMargin=10 * mm,
+        bottomMargin=10 * mm,
+        title=f"Fiscalização D04 #{fiscalizacao_id}",
+        author="Projeto Coleta"
+    )
+
+    estilos = getSampleStyleSheet()
+
+    titulo = ParagraphStyle(
+        "TituloD04",
+        parent=estilos["Heading1"],
+        fontName="Helvetica-Bold",
+        fontSize=12,
+        leading=14,
+        alignment=TA_CENTER,
+        spaceAfter=3 * mm
+    )
+
+    subtitulo = ParagraphStyle(
+        "SubtituloD04",
+        parent=estilos["Normal"],
+        fontName="Helvetica-Bold",
+        fontSize=9,
+        leading=11,
+        alignment=TA_CENTER,
+        spaceAfter=3 * mm
+    )
+
+    normal = ParagraphStyle(
+        "NormalD04",
+        parent=estilos["Normal"],
+        fontName="Helvetica",
+        fontSize=7.5,
+        leading=9
+    )
+
+    pequeno = ParagraphStyle(
+        "PequenoD04",
+        parent=normal,
+        fontSize=6.5,
+        leading=8
+    )
+
+    elementos = []
+
+    elementos.append(
+        Paragraph(
+            "FISCALIZAÇÃO DE ROTINA - COLETA DE LIXO DOMICILIAR D04",
+            titulo
+        )
+    )
+
+    elementos.append(
+        Paragraph(
+            "SETOR DE COLETA D04 ELDORADO-INAMAR",
+            subtitulo
+        )
+    )
+
+    data_br = (
+        fiscalizacao["data"][8:10] + "/" +
+        fiscalizacao["data"][5:7] + "/" +
+        fiscalizacao["data"][0:4]
+    )
+
+    cabecalho = [
+        [
+            Paragraph("<b>FISCAL</b>", pequeno),
+            Paragraph(str(fiscalizacao["fiscal"]), pequeno),
+            Paragraph("<b>DATA</b>", pequeno),
+            Paragraph(data_br, pequeno)
+        ],
+        [
+            Paragraph("<b>SETOR</b>", pequeno),
+            Paragraph(str(fiscalizacao["setor"]), pequeno),
+            Paragraph("<b>KM ESTIMADA</b>", pequeno),
+            Paragraph("11.110", pequeno)
+        ],
+        [
+            Paragraph("<b>FISCALIZAÇÃO</b>", pequeno),
+            Paragraph(f"#{fiscalizacao['id']}", pequeno),
+            Paragraph("<b>SALVA EM</b>", pequeno),
+            Paragraph(str(fiscalizacao["criado_em"]), pequeno)
+        ]
+    ]
+
+    tabela_cabecalho = Table(
+        cabecalho,
+        colWidths=[28 * mm, 64 * mm, 28 * mm, 70 * mm]
+    )
+
+    tabela_cabecalho.setStyle(
+        TableStyle([
+            ("GRID", (0, 0), (-1, -1), 0.5, colors.black),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#eeeeee")),
+            ("BACKGROUND", (2, 0), (2, -1), colors.HexColor("#eeeeee")),
+            ("LEFTPADDING", (0, 0), (-1, -1), 4),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+            ("TOPPADDING", (0, 0), (-1, -1), 4),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ])
+    )
+
+    elementos.append(tabela_cabecalho)
+    elementos.append(Spacer(1, 4 * mm))
+
+    dados_tabela = [[
+        Paragraph("<b>Nº</b>", pequeno),
+        Paragraph("<b>LOCAL</b>", pequeno),
+        Paragraph("<b>HORÁRIO</b>", pequeno),
+        Paragraph("<b>SIM</b>", pequeno),
+        Paragraph("<b>NÃO</b>", pequeno),
+        Paragraph("<b>OBSERVAÇÃO</b>", pequeno)
+    ]]
+
+    for registro in linhas:
+
+        horario = registro["horario"] or ""
+        satisfatoria = registro["satisfatoria"] or ""
+        observacao = registro["observacao"] or ""
+
+        sim = "X" if satisfatoria == "SIM" else ""
+        nao = "X" if satisfatoria == "NÃO" else ""
+
+        nome_local = (
+            f"{registro['tipo']} {registro['local']}"
+        )
+
+        dados_tabela.append([
+            Paragraph(str(registro["ordem"]), pequeno),
+            Paragraph(nome_local, pequeno),
+            Paragraph(horario, pequeno),
+            Paragraph(sim, pequeno),
+            Paragraph(nao, pequeno),
+            Paragraph(observacao, pequeno)
+        ])
+
+    tabela = Table(
+        dados_tabela,
+        colWidths=[
+            9 * mm,
+            66 * mm,
+            23 * mm,
+            12 * mm,
+            12 * mm,
+            68 * mm
+        ],
+        repeatRows=1
+    )
+
+    tabela.setStyle(
+        TableStyle([
+            ("GRID", (0, 0), (-1, -1), 0.45, colors.black),
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#d9d9d9")),
+            ("ALIGN", (0, 0), (0, -1), "CENTER"),
+            ("ALIGN", (2, 0), (4, -1), "CENTER"),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 2.5),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 2.5),
+            ("TOPPADDING", (0, 0), (-1, -1), 2.5),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 2.5),
+        ])
+    )
+
+    elementos.append(tabela)
+    elementos.append(Spacer(1, 4 * mm))
+
+    total_vistoriado = sum(
+        1 for registro in linhas
+        if registro["satisfatoria"] in ("SIM", "NÃO")
+    )
+
+    total_sim = sum(
+        1 for registro in linhas
+        if registro["satisfatoria"] == "SIM"
+    )
+
+    total_nao = sum(
+        1 for registro in linhas
+        if registro["satisfatoria"] == "NÃO"
+    )
+
+    resumo = (
+        f"<b>Resumo:</b> "
+        f"{total_vistoriado} local(is) vistoriado(s) - "
+        f"{total_sim} satisfatório(s) - "
+        f"{total_nao} não satisfatório(s)."
+    )
+
+    elementos.append(
+        Paragraph(
+            resumo,
+            normal
+        )
+    )
+
+    documento.build(elementos)
+
+    pdf = buffer.getvalue()
+    buffer.close()
+
+    nome_arquivo = (
+        f"fiscalizacao_D04_{fiscalizacao_id}.pdf"
+    )
+
+    return Response(
+        pdf,
+        mimetype="application/pdf",
+        headers={
+            "Content-Disposition":
+                f'inline; filename="{nome_arquivo}"'
+        }
+    )
+
+
+# ============================================================
+# INICIAR SERVIDOR
+# ============================================================
+
+if __name__ == "__main__":
+
+    print()
+
+    print(
+        "========================================"
+    )
+
+    print(
+        "           PROJETO COLETA"
+    )
+
+    print(
+        "========================================"
+    )
+
+    print(
+        f"Banco: {BANCO}"
+    )
+
+    print(
+        "Servidor PC:"
+    )
+
+    print(
+        "http://127.0.0.1:8080"
+    )
+
+    print(
+        "========================================"
+    )
+
+    print()
+
+
+    app.run(
+
+        host="0.0.0.0",
+
+        port=8080,
+
+        debug=True
+
+    )
